@@ -7,12 +7,18 @@
  */
 
 #include "gstlibcamerasrc.h"
+#include "gstlibcameraprovider.h"
 
 static gboolean
 plugin_init(GstPlugin *plugin)
 {
-	return gst_element_register(plugin, "libcamerasrc", GST_RANK_PRIMARY,
-				    GST_TYPE_LIBCAMERA_SRC);
+	if (!gst_element_register(plugin, "libcamerasrc", GST_RANK_PRIMARY,
+				  GST_TYPE_LIBCAMERA_SRC) ||
+	    !gst_device_provider_register(plugin, "libcameraprovider",
+					  GST_RANK_PRIMARY,
+					  GST_TYPE_LIBCAMERA_PROVIDER))
+		return FALSE;
+
 	return TRUE;
 }
 

@@ -2,6 +2,7 @@ libcamera_gst_sources = [
     'gstlibcamera.c',
     'gstlibcamera-utils.cpp',
     'gstlibcamerasrc.cpp',
+    'gstlibcameraprovider.cpp',
 ]
 
 libcamera_gst_c_args = [
