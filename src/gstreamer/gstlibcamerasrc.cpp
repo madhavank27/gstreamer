@@ -10,13 +10,26 @@
 #include "gstlibcamerapad.h"
 #include "gstlibcamera-utils.h"
 
+#include <libcamera/camera.h>
+#include <libcamera/camera_manager.h>
+
+using namespace libcamera;
+
 GST_DEBUG_CATEGORY_STATIC(source_debug);
 #define GST_CAT_DEFAULT source_debug
+
+/* Used for C++ object with destructors */
+struct GstLibcameraSrcState {
+	std::shared_ptr<CameraManager> cm;
+	std::shared_ptr<Camera> cam;
+};
 
 struct _GstLibcameraSrc {
 	GstElement parent;
 	GstPad *srcpad;
 	gchar *camera_name;
+
+	GstLibcameraSrcState *state;
 };
 
 enum {
@@ -39,6 +52,83 @@ GstStaticPadTemplate src_template = {
 GstStaticPadTemplate request_src_template = {
 	"src_%s", GST_PAD_SRC, GST_PAD_REQUEST, TEMPLATE_CAPS
 };
+
+static bool
+gst_libcamera_src_open(GstLibcameraSrc *self)
+{
+	std::shared_ptr<CameraManager> cm = std::make_shared<CameraManager>();
+	std::shared_ptr<Camera> cam = nullptr;
+	gint ret = 0;
+	g_autofree gchar *camera_name = nullptr;
+
+	GST_DEBUG_OBJECT(self, "Opening camera device ...");
+
+	ret = cm->start();
+	if (ret) {
+		GST_ELEMENT_ERROR(self, LIBRARY, INIT,
+				  ("Failed listing cameras."),
+				  ("libcamera::CameraMananger.start() failed: %s", g_strerror(-ret)));
+		return false;
+	}
+
+	{
+		GST_OBJECT_LOCKER(self);
+		if (self->camera_name)
+			camera_name = g_strdup(self->camera_name);
+	}
+
+	if (camera_name) {
+		cam = cm->get(self->camera_name);
+		if (!cam) {
+			GST_ELEMENT_ERROR(self, RESOURCE, NOT_FOUND,
+					  ("Could not find a camera named '%s'.", self->camera_name),
+					  ("libcamera::CameraMananger.get() returned NULL"));
+			return false;
+		}
+	} else {
+		if (cm->cameras().empty()) {
+			GST_ELEMENT_ERROR(self, RESOURCE, NOT_FOUND,
+					  ("Could not find any supported camera on this system."),
+					  ("libcamera::CameraMananger.cameras() is empty"));
+			return false;
+		}
+		cam = cm->cameras()[0];
+	}
+
+	GST_INFO_OBJECT(self, "Using camera named '%s'", cam->name().c_str());
+
+	ret = cam->acquire();
+	if (ret) {
+		GST_ELEMENT_ERROR(self, RESOURCE, BUSY,
+				  ("Camera name '%s' is already in use.", cam->name().c_str()),
+				  ("libcamera::Camera.acquire() failed: %s", g_strerror(ret)));
+		return false;
+	}
+
+	/* no need to lock here we didn't start our threads */
+	self->state->cm = cm;
+	self->state->cam = cam;
+
+	return true;
+}
+
+static void
+gst_libcamera_src_close(GstLibcameraSrc *self)
+{
+	GstLibcameraSrcState *state = self->state;
+	gint ret;
+
+	ret = state->cam->release();
+	if (ret) {
+		GST_ELEMENT_WARNING(self, RESOURCE, BUSY,
+				    ("Camera name '%s' is still in use.", state->cam->name().c_str()),
+				    ("libcamera::Camera.release() failed: %s", g_strerror(-ret)));
+	}
+
+	state->cam.reset();
+	state->cm->stop();
+	state->cm.reset();
+}
 
 static void
 gst_libcamera_src_set_property(GObject *object, guint prop_id,
@@ -73,7 +163,36 @@ gst_libcamera_src_get_property(GObject *object, guint prop_id, GValue *value,
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
 		break;
 	}
+}
 
+static GstStateChangeReturn
+gst_libcamera_src_change_state(GstElement *element, GstStateChange transition)
+{
+	GstLibcameraSrc *self = GST_LIBCAMERA_SRC(element);
+	GstStateChangeReturn ret = GST_STATE_CHANGE_SUCCESS;
+	GstElementClass *klass = GST_ELEMENT_CLASS(gst_libcamera_src_parent_class);
+
+	ret = klass->change_state(element, transition);
+	if (ret == GST_STATE_CHANGE_FAILURE)
+		return ret;
+
+	switch (transition) {
+	case GST_STATE_CHANGE_NULL_TO_READY:
+		if (!gst_libcamera_src_open(self))
+			return GST_STATE_CHANGE_FAILURE;
+		break;
+	case GST_STATE_CHANGE_READY_TO_PAUSED:
+	case GST_STATE_CHANGE_PLAYING_TO_PAUSED:
+		ret = GST_STATE_CHANGE_NO_PREROLL;
+		break;
+	case GST_STATE_CHANGE_READY_TO_NULL:
+		gst_libcamera_src_close(self);
+		break;
+	default:
+		break;
+	}
+
+	return ret;
 }
 
 static void
@@ -83,6 +202,7 @@ gst_libcamera_src_finalize(GObject *object)
 	GstLibcameraSrc *self = GST_LIBCAMERA_SRC(object);
 
 	g_free(self->camera_name);
+	delete self->state;
 
 	return klass->finalize(object);
 }
@@ -90,10 +210,12 @@ gst_libcamera_src_finalize(GObject *object)
 static void
 gst_libcamera_src_init(GstLibcameraSrc *self)
 {
+	GstLibcameraSrcState *state = new GstLibcameraSrcState();
 	GstPadTemplate *templ = gst_element_get_pad_template(GST_ELEMENT(self), "src");
 
 	self->srcpad = gst_pad_new_from_template(templ, "src");
 	gst_element_add_pad(GST_ELEMENT(self), self->srcpad);
+	self->state = state;
 }
 
 static void
@@ -106,6 +228,8 @@ gst_libcamera_src_class_init(GstLibcameraSrcClass *klass)
 	object_class->set_property = gst_libcamera_src_set_property;
 	object_class->get_property = gst_libcamera_src_get_property;
 	object_class->finalize = gst_libcamera_src_finalize;
+
+	element_class->change_state = gst_libcamera_src_change_state;
 
 	gst_element_class_set_metadata(element_class,
 				       "LibCamera Source", "Source/Video",
