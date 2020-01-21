@@ -7,6 +7,7 @@
  */
 
 #include <gst/gst.h>
+#include <libcamera/stream.h>
 
 #ifndef __GST_LIBCAMERA_PAD_H__
 #define __GST_LIBCAMERA_PAD_H__
@@ -15,5 +16,6 @@
 G_DECLARE_FINAL_TYPE(GstLibcameraPad, gst_libcamera_pad,
 		     GST_LIBCAMERA, PAD, GstPad)
 
+libcamera::StreamRole gst_libcamera_pad_get_role(GstPad *pad);
 
 #endif /* __GST_LIBCAMERA_PAD_H__ */
