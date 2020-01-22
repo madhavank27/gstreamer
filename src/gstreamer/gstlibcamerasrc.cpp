@@ -22,6 +22,7 @@ GST_DEBUG_CATEGORY_STATIC(source_debug);
 struct GstLibcameraSrcState {
 	std::shared_ptr<CameraManager> cm;
 	std::shared_ptr<Camera> cam;
+	std::vector<GstPad *> srcpads;
 };
 
 struct _GstLibcameraSrc {
@@ -29,7 +30,6 @@ struct _GstLibcameraSrc {
 
 	GRecMutex stream_lock;
 	GstTask *task;
-	GstPad *srcpad;
 
 	gchar *camera_name;
 
@@ -258,8 +258,8 @@ gst_libcamera_src_init(GstLibcameraSrc *self)
 	gst_task_set_leave_callback(self->task, gst_libcamera_src_task_leave, self, nullptr);
 	gst_task_set_lock(self->task, &self->stream_lock);
 
-	self->srcpad = gst_pad_new_from_template(templ, "src");
-	gst_element_add_pad(GST_ELEMENT(self), self->srcpad);
+	state->srcpads.push_back(gst_pad_new_from_template(templ, "src"));
+	gst_element_add_pad(GST_ELEMENT(self), state->srcpads[0]);
 	self->state = state;
 }
 
