@@ -16,5 +16,8 @@
 #define GST_OBJECT_LOCKER(obj) g_autoptr(GMutexLocker) locker = g_mutex_locker_new(GST_OBJECT_GET_LOCK(obj))
 
 GstCaps *gst_libcamera_stream_formats_to_caps(const libcamera::StreamFormats &formats);
+GstCaps *gst_libcamera_stream_configuration_to_caps(const libcamera::StreamConfiguration &stream_cfg);
+void gst_libcamera_configure_stream_from_caps(libcamera::StreamConfiguration &stream_cfg,
+					      GstCaps *caps);
 
 #endif /* __GST_LIBCAMERA_UTILS_H_ */
