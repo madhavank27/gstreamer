@@ -18,6 +18,8 @@ using namespace libcamera;
 GST_DEBUG_CATEGORY_STATIC(source_debug);
 #define GST_CAT_DEFAULT source_debug
 
+#define STREAM_LOCKER(obj) g_autoptr(GRecMutexLocker) stream_locker = g_rec_mutex_locker_new(&GST_LIBCAMERA_SRC(obj)->stream_lock)
+
 /* Used for C++ object with destructors */
 struct GstLibcameraSrcState {
 	std::shared_ptr<CameraManager> cm;
@@ -127,9 +129,20 @@ gst_libcamera_src_task_run(gpointer user_data)
 static void
 gst_libcamera_src_task_enter(GstTask *task, GThread *thread, gpointer user_data)
 {
+	STREAM_LOCKER(user_data);
 	GstLibcameraSrc *self = GST_LIBCAMERA_SRC(user_data);
+	GstLibcameraSrcState *state = self->state;
 
 	GST_DEBUG_OBJECT(self, "Streaming thread has started");
+
+	guint group_id = gst_util_group_id_next();
+	for (GstPad *srcpad : state->srcpads) {
+		/* Create stream-id and push stream-start */
+		g_autofree gchar *stream_id = gst_pad_create_stream_id(srcpad, GST_ELEMENT(self), nullptr);
+		GstEvent *event = gst_event_new_stream_start(stream_id);
+		gst_event_set_group_id(event, group_id);
+		gst_pad_push_event(srcpad, event);
+	}
 }
 
 static void
