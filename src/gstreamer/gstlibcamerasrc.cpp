@@ -6,6 +6,12 @@
  * gstlibcamerasrc.cpp - GStreamer Capture Element
  */
 
+/**
+ * \todo libcamera UVC drivers picks the lowest possible resolution first, this
+ * should be fixed so that we get a decent resolution and framerate for the
+ * role by default.
+ */
+
 #include "gstlibcamera-utils.h"
 #include "gstlibcamerapad.h"
 #include "gstlibcamerasrc.h"
@@ -23,6 +29,7 @@ GST_DEBUG_CATEGORY_STATIC(source_debug);
 struct GstLibcameraSrcState {
 	std::unique_ptr<CameraManager> cm;
 	std::shared_ptr<Camera> cam;
+	std::unique_ptr<CameraConfiguration> config;
 	std::vector<GstPad *> srcpads;
 };
 
@@ -131,16 +138,89 @@ gst_libcamera_src_task_enter(GstTask *task, GThread *thread, gpointer user_data)
 	GstLibcameraSrc *self = GST_LIBCAMERA_SRC(user_data);
 	GLibRecLocker(&self->stream_lock);
 	GstLibcameraSrcState *state = self->state;
+	GstFlowReturn flow_ret = GST_FLOW_OK;
 
 	GST_DEBUG_OBJECT(self, "Streaming thread has started");
 
 	guint group_id = gst_util_group_id_next();
+	StreamRoles roles;
 	for (GstPad *srcpad : state->srcpads) {
-		/* Create stream-id and push stream-start */
+		/* Create stream-id and push stream-start .*/
 		g_autofree gchar *stream_id = gst_pad_create_stream_id(srcpad, GST_ELEMENT(self), nullptr);
 		GstEvent *event = gst_event_new_stream_start(stream_id);
 		gst_event_set_group_id(event, group_id);
 		gst_pad_push_event(srcpad, event);
+
+		/* Collect the streams roles for the next iteration .*/
+		roles.push_back(gst_libcamera_pad_get_role(srcpad));
+	}
+
+	/* Generate the stream configurations, there should be one per pad .*/
+	state->config = state->cam->generateConfiguration(roles);
+	/* \todo Check if camera may increase or decrease the number of streams
+	 * regardless of the number of roles.*/
+	g_assert(state->config->size() == state->srcpads.size());
+
+	for (gsize i = 0; i < state->srcpads.size(); i++) {
+		GstPad *srcpad = state->srcpads[i];
+		StreamConfiguration &stream_cfg = state->config->at(i);
+
+		/* Retrieve the supported caps. */
+		g_autoptr(GstCaps) filter = gst_libcamera_stream_formats_to_caps(stream_cfg.formats());
+		g_autoptr(GstCaps) caps = gst_pad_peer_query_caps(srcpad, filter);
+		if (gst_caps_is_empty(caps)) {
+			flow_ret = GST_FLOW_NOT_NEGOTIATED;
+			break;
+		}
+
+		/* Fixate caps and configure the stream. */
+		caps = gst_caps_make_writable(caps);
+		gst_libcamera_configure_stream_from_caps(stream_cfg, caps);
+	}
+
+	if (flow_ret != GST_FLOW_OK)
+		goto done;
+
+	/* Validate the configuration. */
+	if (state->config->validate() == CameraConfiguration::Invalid) {
+		flow_ret = GST_FLOW_NOT_NEGOTIATED;
+		goto done;
+	}
+
+	/*
+	 * Regardless if it has been modified, create clean caps and push the
+	 * caps event. Downstream will decide if the caps are acceptable.
+	 */
+	for (gsize i = 0; i < state->srcpads.size(); i++) {
+		GstPad *srcpad = state->srcpads[i];
+		const StreamConfiguration &stream_cfg = state->config->at(i);
+
+		g_autoptr(GstCaps) caps = gst_libcamera_stream_configuration_to_caps(stream_cfg);
+		if (!gst_pad_push_event(srcpad, gst_event_new_caps(caps))) {
+			flow_ret = GST_FLOW_NOT_NEGOTIATED;
+			break;
+		}
+	}
+
+	{
+		gint ret = state->cam->configure(state->config.get());
+		if (ret) {
+			GST_ELEMENT_ERROR(self, RESOURCE, SETTINGS,
+					  ("Failed to configure camera: %s", g_strerror(-ret)),
+					  ("Camera::configure() failed with error code %i", ret));
+			gst_task_stop(task);
+			return;
+		}
+	}
+
+done:
+	switch (flow_ret) {
+	case GST_FLOW_NOT_NEGOTIATED:
+		GST_ELEMENT_FLOW_ERROR(self, flow_ret);
+		gst_task_stop(task);
+		return;
+	default:
+		break;
 	}
 }
 
