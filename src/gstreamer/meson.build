@@ -1,7 +1,9 @@
 libcamera_gst_sources = [
     'gstlibcamera-utils.cpp',
     'gstlibcamera.c',
+    'gstlibcameraallocator.cpp',
     'gstlibcamerapad.cpp',
+    'gstlibcamerapool.cpp',
     'gstlibcameraprovider.cpp',
     'gstlibcamerasrc.cpp',
 ]
@@ -11,14 +13,17 @@ libcamera_gst_c_args = [
     '-DPACKAGE="@0@"'.format(meson.project_name()),
 ]
 
-gst_dep = dependency('gstreamer-video-1.0', version : '>=1.16.1',
-                     required : get_option('gstreamer'))
+gst_req = '>=1.16.1'
+gstvideo_dep = dependency('gstreamer-video-1.0', version : gst_req,
+                          required : get_option('gstreamer'))
+gstallocator_dep = dependency('gstreamer-allocators-1.0', version : gst_req,
+                              required : get_option('gstreamer'))
 
-if gst_dep.found()
+if gstvideo_dep.found() and gstallocator_dep.found()
     libcamera_gst = shared_library('gstlibcamera',
         libcamera_gst_sources,
         c_args : libcamera_gst_c_args,
-        dependencies : [libcamera_dep, gst_dep],
+        dependencies : [libcamera_dep, gstvideo_dep, gstallocator_dep],
         install: true,
         install_dir : '@0@/gstreamer-1.0'.format(get_option('libdir')),
     )
