@@ -16,6 +16,7 @@ using namespace libcamera;
 struct _GstLibcameraPad {
 	GstPad parent;
 	StreamRole role;
+	GstLibcameraPool *pool;
 };
 
 enum {
@@ -106,4 +107,21 @@ gst_libcamera_pad_get_role(GstPad *pad)
 	auto *self = GST_LIBCAMERA_PAD(pad);
 	GST_OBJECT_LOCKER(self);
 	return self->role;
+}
+
+GstLibcameraPool *
+gst_libcamera_pad_get_pool(GstPad *pad)
+{
+	auto *self = GST_LIBCAMERA_PAD(pad);
+	return self->pool;
+}
+
+void
+gst_libcamera_pad_set_pool(GstPad *pad, GstLibcameraPool *pool)
+{
+	auto *self = GST_LIBCAMERA_PAD(pad);
+	
+	if (self->pool)
+		g_object_unref(self->pool);
+	self->pool = pool;
 }
