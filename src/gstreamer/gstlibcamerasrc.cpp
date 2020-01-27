@@ -256,7 +256,6 @@ gst_libcamera_src_task_leave(GstTask *task, GThread *thread, gpointer user_data)
 	GstLibcameraSrcState *state = self->state;
 
 	GST_DEBUG_OBJECT(self, "Streaming thread is about to stop");
-	state->cam->stop();
 
 	for (GstPad *srcpad : state->srcpads)
 		gst_libcamera_pad_set_pool(srcpad, NULL);
