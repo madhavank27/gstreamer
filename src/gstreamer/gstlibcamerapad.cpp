@@ -152,7 +152,7 @@ gst_libcamera_pad_push_pending(GstPad *pad)
 {
 	auto *self = GST_LIBCAMERA_PAD(pad);
 	GstBuffer *buffer;
-	GstFlowReturn ret = GST_FLOW_CUSTOM_SUCCESS;
+	GstFlowReturn ret = GST_FLOW_OK;
 
 	{
 		GST_OBJECT_LOCKER(self);
@@ -163,4 +163,20 @@ gst_libcamera_pad_push_pending(GstPad *pad)
 		ret = gst_pad_push(pad, buffer);
 
 	return ret;
+}
+
+bool
+gst_libcamera_pad_has_pending(GstPad *pad)
+{
+	auto *self = GST_LIBCAMERA_PAD(pad);
+	GST_OBJECT_LOCKER(self);
+	return (self->pending_buffers.length > 0);
+}
+
+void
+gst_libcamera_pad_set_latency(GstPad *pad, GstClockTime latency)
+{
+	auto *self = GST_LIBCAMERA_PAD(pad);
+	GST_OBJECT_LOCKER(self);
+	self->latency = latency;
 }
