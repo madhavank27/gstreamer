@@ -18,6 +18,7 @@ struct _GstLibcameraPad {
 	StreamRole role;
 	GstLibcameraPool *pool;
 	GQueue pending_buffers;
+	GstClockTime latency;
 };
 
 enum {
@@ -159,7 +160,15 @@ gst_libcamera_pad_push_pending(GstPad *pad)
 	}
 
 	if (!buffer)
-		return GST_FLOW_CUSTOM_SUCCESS;
+		return GST_FLOW_OK;
 
 	return gst_pad_push(pad, buffer);
+}
+
+bool
+gst_libcamera_pad_has_pending(GstPad *pad)
+{
+	auto *self = GST_LIBCAMERA_PAD(pad);
+	GLibLocker lock(GST_OBJECT(self));
+	return (self->pending_buffers.length > 0);
 }
