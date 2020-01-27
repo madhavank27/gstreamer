@@ -238,3 +238,12 @@ gst_libcamera_allocator_get_pool_size(GstLibcameraAllocator *self,
 
 	return pool->length;
 }
+
+FrameBuffer *
+gst_libcamera_memory_get_frame_buffer(GstMemory *mem)
+{
+	gpointer data = gst_mini_object_get_qdata(GST_MINI_OBJECT_CAST(mem),
+						  gst_libcamera_frame_quark());
+	auto *frame = (FrameWrap *)data;
+	return frame->buffer_;
+}
