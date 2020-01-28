@@ -18,6 +18,7 @@ struct _GstLibcameraPad {
 	StreamRole role;
 	GstLibcameraPool *pool;
 	GQueue pending_buffers;
+	GstClockTime latency;
 };
 
 enum {
@@ -61,9 +62,24 @@ gst_libcamera_pad_get_property(GObject *object, guint prop_id, GValue *value,
 	}
 }
 
+static gboolean
+gst_libcamera_pad_query(GstPad *pad, GstObject *parent, GstQuery *query)
+{
+	auto *self = GST_LIBCAMERA_PAD(pad);
+
+	if (query->type != GST_QUERY_LATENCY)
+		return gst_pad_query_default(pad, parent, query);
+
+	/* TRUE here means live, we assumes that max latency is the same as min
+	 * as we have no idea that duration of frames */
+	gst_query_set_latency(query, TRUE, self->latency, self->latency);
+	return TRUE;
+}
+
 static void
 gst_libcamera_pad_init(GstLibcameraPad *self)
 {
+	GST_PAD_QUERYFUNC(self) = gst_libcamera_pad_query;
 }
 
 static GType
