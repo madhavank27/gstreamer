@@ -6,6 +6,26 @@
  * gstlibcamerasrc.cpp - GStreamer Capture Element
  */
 
+/* TODO
+ *  - Implement GstElement::send_event
+ *    + Allowing application to send EOS
+ *    + Allowing application to use FLUSH/FLUSH_STOP
+ *    + Prevent the main thread from accessing streaming thread
+ *  - Implement renegotiation (even if slow)
+ *  - Implement GstElement::request-new-pad (multi stream)
+ *    + Evaluate if a single streaming thread is fine
+ *  - Add application driven request (snapshot)
+ *  - Add framerate control
+ *
+ *  Requires new libcamera API:
+ *  - Add framerate negotiation support
+ *  - Add colorimetry support
+ *  - Add timestamp support
+ *  - Use unique names to select the camera
+ *  - Add GstVideoMeta support (strides and offsets)
+ *  - Add buffer importation support
+ */
+
 #include "gstlibcamerasrc.h"
 #include "gstlibcamerapad.h"
 #include "gstlibcameraallocator.h"
