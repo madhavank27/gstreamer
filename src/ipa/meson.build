@@ -28,3 +28,4 @@ config_h.set('IPA_MODULE_DIR',
 
 subdir('rkisp1')
 subdir('rpi')
+

@@ -43,7 +43,7 @@ public:
 	int init() override { return 0; }
 
 	void configure(const std::map<unsigned int, IPAStream> &streamConfig,
-		       const std::map<unsigned int, ControlInfoMap> &entityControls) override;
+		       const std::map<unsigned int, const ControlInfoMap &> &entityControls) override;
 	void mapBuffers(const std::vector<IPABuffer> &buffers) override;
 	void unmapBuffers(const std::vector<unsigned int> &ids) override;
 	void processEvent(const IPAOperationData &event) override;
@@ -57,8 +57,6 @@ private:
 	void setControls(unsigned int frame);
 	void metadataReady(unsigned int frame, unsigned int aeState);
 
-	std::map<unsigned int, BufferMemory> bufferInfo_;
-
 	ControlInfoMap ctrls_;
 
 	/* Camera sensor controls. */
@@ -71,8 +69,9 @@ private:
 	uint32_t maxGain_;
 };
 
+
 void IPARPi::configure(const std::map<unsigned int, IPAStream> &streamConfig,
-		       const std::map<unsigned int, ControlInfoMap> &entityControls)
+		       const std::map<unsigned int, const ControlInfoMap &> &entityControls)
 {
 	if (entityControls.empty())
 		return;
@@ -108,18 +107,13 @@ void IPARPi::configure(const std::map<unsigned int, IPAStream> &streamConfig,
 	setControls(0);
 }
 
+
 void IPARPi::mapBuffers(const std::vector<IPABuffer> &buffers)
 {
-	for (const IPABuffer &buffer : buffers) {
-		bufferInfo_[buffer.id] = buffer.memory;
-		bufferInfo_[buffer.id].planes()[0].mem();
-	}
 }
 
 void IPARPi::unmapBuffers(const std::vector<unsigned int> &ids)
 {
-	for (unsigned int id : ids)
-		bufferInfo_.erase(id);
 }
 
 void IPARPi::processEvent(const IPAOperationData &event)
@@ -129,20 +123,12 @@ void IPARPi::processEvent(const IPAOperationData &event)
 		unsigned int frame = event.data[0];
 		unsigned int bufferId = event.data[1];
 
-		const rpi_stat_buffer *stats =
-			static_cast<rpi_stat_buffer *>(bufferInfo_[bufferId].planes()[0].mem());
-
-		updateStatistics(frame, stats);
 		break;
 	}
 	case RPI_IPA_EVENT_QUEUE_REQUEST: {
 		unsigned int frame = event.data[0];
 		unsigned int bufferId = event.data[1];
 
-		rpi_isp_params_cfg *params =
-			static_cast<rpi_isp_params_cfg *>(bufferInfo_[bufferId].planes()[0].mem());
-
-		queueRequest(frame, params, event.controls[0]);
 		break;
 	}
 	default:
@@ -223,7 +209,7 @@ const struct IPAModuleInfo ipaModuleInfo = {
 
 struct ipa_context *ipaCreate()
 {
-	return new IPAInterfaceWrapper(new IPARPi());
+	return new IPAInterfaceWrapper(std::make_unique<IPARPi>());
 }
 }; /* extern "C" */
 
